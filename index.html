@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ultra HD Downloader</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+        .text-gradient {
+            background: linear-gradient(to right, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="bg-gray-950 flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-gray-900 border border-gray-800 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden p-8">
+        
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-black text-gradient mb-2">ULTRA DOWNLOADER</h1>
+            <p class="text-gray-500 text-sm">Download 1080p, 4K & 60FPS.</p>
+        </div>
+
+        <div class="relative mb-6">
+            <input type="text" id="urlInput" 
+                class="w-full bg-gray-950 text-white border border-gray-700 rounded-xl px-5 py-4 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all pl-12 shadow-inner"
+                placeholder="Paste YouTube Link here...">
+            <i class="fas fa-link absolute left-4 top-5 text-gray-500"></i>
+        </div>
+
+        <button onclick="getVideoInfo()" id="checkBtn"
+            class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg transform hover:scale-[1.01] transition-all duration-200">
+            Check Quality
+        </button>
+
+        <div id="result" class="hidden mt-8 fade-in">
+            <div class="bg-gray-950 rounded-xl p-4 border border-gray-800 shadow-xl">
+                <div class="relative">
+                    <img id="thumb" src="" class="w-full rounded-lg mb-4 opacity-90">
+                    <span class="absolute top-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded">HD</span>
+                </div>
+                
+                <h3 id="vidTitle" class="text-white font-bold text-lg leading-tight mb-4 truncate"></h3>
+                
+                <button onclick="startDownload()" id="dlBtn"
+                    class="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-bold py-3 rounded-lg shadow-lg flex justify-center items-center gap-2 transition-all">
+                    <i class="fas fa-bolt"></i> Download Full HD
+                </button>
+
+                <div id="progressContainer" class="hidden mt-5">
+                    <div class="flex justify-between text-xs text-gray-400 mb-2 font-mono">
+                        <span id="progressText">Starting Stream...</span>
+                        <span id="percentage">0%</span>
+                    </div>
+                    <div class="w-full bg-gray-800 rounded-full h-3 overflow-hidden">
+                        <div id="progressBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let currentUrl = "";
+        let currentTitle = "";
+        let estimatedSize = 0; // Store size here
+
+        async function getVideoInfo() {
+            const url = document.getElementById('urlInput').value;
+            const btn = document.getElementById('checkBtn');
+
+            if(!url) return Swal.fire({ icon: 'warning', title: 'Missing Link', text: 'Please paste a URL first!', background: '#111827', color: '#fff' });
+
+            btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Analyze...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch(`http://localhost:4000/info?url=${encodeURIComponent(url)}`);
+                const data = await response.json();
+
+                if(data.error) throw new Error(data.error);
+
+                document.getElementById('vidTitle').innerText = data.title;
+                document.getElementById('thumb').src = data.thumbnail;
+                document.getElementById('result').classList.remove('hidden');
+                
+                currentUrl = url;
+                currentTitle = data.title;
+                estimatedSize = data.contentLength; // SAVE THE SIZE for later
+
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Could not fetch info. Server might be blocked.', background: '#111827', color: '#fff' });
+            } finally {
+                btn.innerHTML = 'Check Quality';
+                btn.disabled = false;
+            }
+        }
+
+        async function startDownload() {
+            const dlBtn = document.getElementById('dlBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const percentageText = document.getElementById('percentage');
+            const progressText = document.getElementById('progressText');
+
+            dlBtn.disabled = true;
+            dlBtn.innerHTML = '<i class="fas fa-cog fa-spin"></i> Merging & Downloading...';
+            progressContainer.classList.remove('hidden');
+            progressBar.style.width = '0%';
+
+            try {
+                // Pass title so we can name the file correctly
+                const response = await fetch(`http://localhost:4000/download?url=${encodeURIComponent(currentUrl)}&title=${encodeURIComponent(currentTitle)}`);
+                
+                if (!response.ok) throw new Error("Download failed");
+
+                // Use the estimated size from the /info step if header is missing
+                const contentLength = response.headers.get('Content-Length');
+                const total = contentLength ? parseInt(contentLength, 10) : estimatedSize;
+
+                const reader = response.body.getReader();
+                let loaded = 0;
+                const chunks = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    chunks.push(value);
+                    loaded += value.byteLength;
+
+                    if (total > 0) {
+                        const percent = Math.min(Math.round((loaded / total) * 100), 99); // Cap at 99% until fully done
+                        progressBar.style.width = `${percent}%`;
+                        percentageText.innerText = `${percent}%`;
+                        progressText.innerText = `Downloading ${(loaded / 1024 / 1024).toFixed(1)} MB`;
+                    } else {
+                        // If we have NO size info, just show a loading animation
+                        progressBar.style.width = '100%';
+                        percentageText.innerText = '??%';
+                        progressText.innerText = `Streamed ${(loaded / 1024 / 1024).toFixed(1)} MB`;
+                    }
+                }
+
+                // Complete
+                progressBar.style.width = '100%';
+                percentageText.innerText = '100%';
+                
+                const blob = new Blob(chunks);
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = `${currentTitle}.mp4`; 
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                
+                Swal.fire({ icon: 'success', title: 'Done!', background: '#111827', color: '#fff' });
+
+            } catch (error) {
+                Swal.fire({ icon: 'error', title: 'Failed', text: error.message, background: '#111827', color: '#fff' });
+            } finally {
+                dlBtn.disabled = false;
+                dlBtn.innerHTML = '<i class="fas fa-bolt"></i> Download Full HD';
+            }
+        }
+    </script>
+</body>
+</html>
