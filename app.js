@@ -9,6 +9,8 @@ app.use(cors());
 // 1. Get Info
 app.get('/info', async (req, res) => {
     const videoURL = req.query.url;
+    console.log("Received request for:", videoURL); // <--- Add this to confirm request received
+
     try {
         const output = await youtubedl(videoURL, {
             dumpJson: true,
@@ -21,6 +23,10 @@ app.get('/info', async (req, res) => {
             contentLength: output.filesize_approx || 0
         });
     } catch (error) {
+        // ▼▼▼ ADD THIS LINE ▼▼▼
+        console.error("YOUTUBE-DL ERROR:", error); 
+        // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+        
         res.status(500).json({ error: 'Failed to fetch video details' });
     }
 });
